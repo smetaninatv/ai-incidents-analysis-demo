@@ -1,0 +1,8 @@
+timestamp,level,service,message
+2026-07-12T09:31:00Z,ERROR,api-gateway,connection timeout
+2026-07-12T09:32:15Z,error,api-gateway,connection   timeout
+2026-07-12T09:45:02Z,ERROR,api-gateway,connection timeout
+2026-07-12T09:33:10Z,INFO,auth-service,user login ok
+2026-07-12T09:34:00Z,,billing,payment retry scheduled
+2026-07-12T09:36:20Z,WARN,billing,payment retry scheduled
+not-a-timestamp,ERROR,worker,job failed
