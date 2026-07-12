@@ -339,3 +339,58 @@ def test_missing_required_column_exits_one(tmp_path):
     out = tmp_path / "summary.csv"
     result = run_cli(str(FIXTURES / "missing_message_column.csv"), "-o", str(out))
     assert result.returncode == 1
+
+
+# --------------------------------------------------------------------------- #
+# --min-count N filter (Q9)
+# --------------------------------------------------------------------------- #
+# basic_events.csv yields two groups: auth/INFO (count 3), billing/ERROR (2).
+def test_min_count_excludes_groups_below_threshold(tmp_path):
+    out = tmp_path / "summary.csv"
+    result = run_cli(str(FIXTURES / "basic_events.csv"), "--min-count", "3",
+                     "-o", str(out))
+    assert result.returncode == 0, result.stderr
+    rows = as_dicts(out)
+    assert len(rows) == 1
+    assert rows[0]["service"] == "auth"
+    assert rows[0]["count"] == "3"
+
+
+def test_min_count_boundary_is_inclusive(tmp_path):
+    # count == N is kept (>=, not >): both groups survive at N=2.
+    out = tmp_path / "summary.csv"
+    result = run_cli(str(FIXTURES / "basic_events.csv"), "--min-count", "2",
+                     "-o", str(out))
+    assert result.returncode == 0, result.stderr
+    rows = as_dicts(out)
+    assert {r["service"] for r in rows} == {"auth", "billing"}
+
+
+def test_min_count_filtering_everything_yields_header_only(tmp_path):
+    out = tmp_path / "summary.csv"
+    result = run_cli(str(FIXTURES / "basic_events.csv"), "--min-count", "4",
+                     "-o", str(out))
+    assert result.returncode == 0, result.stderr
+    header, data = read_summary(out)
+    assert header == EXPECTED_HEADER
+    assert data == []
+
+
+def test_default_behaviour_unchanged_without_flag(tmp_path):
+    # Explicit guard: output with no --min-count must match the pre-feature
+    # result (both groups present, unchanged ordering).
+    out = tmp_path / "summary.csv"
+    result = run_cli(str(FIXTURES / "basic_events.csv"), "-o", str(out))
+    assert result.returncode == 0, result.stderr
+    rows = as_dicts(out)
+    assert [(r["service"], r["count"]) for r in rows] == [
+        ("auth", "3"),
+        ("billing", "2"),
+    ]
+
+
+def test_non_integer_min_count_is_usage_error(tmp_path):
+    out = tmp_path / "summary.csv"
+    result = run_cli(str(FIXTURES / "basic_events.csv"), "--min-count",
+                     "notanumber", "-o", str(out))
+    assert result.returncode == 2

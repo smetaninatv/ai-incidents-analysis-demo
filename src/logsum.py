@@ -7,6 +7,7 @@ from __future__ import annotations
 import argparse
 import csv
 import sys
+from dataclasses import dataclass
 from datetime import datetime, timezone
 
 REQUIRED_COLUMNS = ("timestamp", "level", "service", "message")
@@ -45,43 +46,48 @@ def parse_timestamp(raw: str) -> datetime | None:
     return dt.astimezone(timezone.utc)
 
 
+@dataclass
+class _Group:
+    """Running aggregate for one (service, level, message) group."""
+
+    count: int = 0
+    first_dt: datetime | None = None
+    first_str: str = ""
+    last_dt: datetime | None = None
+    last_str: str = ""
+
+    def add(self, dt: datetime | None, raw_ts: str) -> None:
+        """Count a row; track earliest/latest valid timestamp by UTC instant."""
+        self.count += 1
+        # Malformed timestamps are counted but excluded from first/last_seen (spec Q5).
+        if dt is None:
+            return
+        if self.first_dt is None or dt < self.first_dt:
+            self.first_dt, self.first_str = dt, raw_ts
+        if self.last_dt is None or dt > self.last_dt:
+            self.last_dt, self.last_str = dt, raw_ts
+
+
 def summarise(rows):
     """Group rows by (service, level, normalised message) and sort deterministically."""
-    groups = {}
+    groups: dict[tuple[str, str, str], _Group] = {}
     for row in rows:
-        service = normalise_service(row.get("service"))
-        level = normalise_level(row.get("level"))
-        message = normalise_message(row.get("message"))
-        key = (service, level, message)
-
+        key = (
+            normalise_service(row.get("service")),
+            normalise_level(row.get("level")),
+            normalise_message(row.get("message")),
+        )
         raw_ts = (row.get("timestamp") or "").strip()
-        dt = parse_timestamp(raw_ts)
-
-        group = groups.get(key)
-        if group is None:
-            group = {
-                "count": 0,
-                "first_dt": None, "first_str": "",
-                "last_dt": None, "last_str": "",
-            }
-            groups[key] = group
-        group["count"] += 1
-
-        # Malformed timestamps are counted but excluded from first/last_seen (spec Q5).
-        if dt is not None:
-            if group["first_dt"] is None or dt < group["first_dt"]:
-                group["first_dt"], group["first_str"] = dt, raw_ts
-            if group["last_dt"] is None or dt > group["last_dt"]:
-                group["last_dt"], group["last_str"] = dt, raw_ts
+        groups.setdefault(key, _Group()).add(parse_timestamp(raw_ts), raw_ts)
 
     records = [
         {
             "service": service,
             "level": level,
             "message": message,
-            "count": g["count"],
-            "first_seen": g["first_str"],
-            "last_seen": g["last_str"],
+            "count": g.count,
+            "first_seen": g.first_str,
+            "last_seen": g.last_str,
         }
         for (service, level, message), g in groups.items()
     ]
@@ -120,6 +126,9 @@ def build_parser():
                         help="output summary CSV path (default: summary.csv)")
     parser.add_argument("-o", "--output", dest="output_flag", default=None,
                         help="output summary CSV path (overrides positional)")
+    parser.add_argument("--min-count", dest="min_count", type=int, default=None,
+                        metavar="N",
+                        help="only output groups whose count is >= N")
     return parser
 
 
@@ -137,6 +146,9 @@ def main(argv=None):
         return 1
 
     records = summarise(rows)
+    # Opt-in filter: keep only groups at/above the threshold (spec Q9).
+    if args.min_count is not None:
+        records = [r for r in records if r["count"] >= args.min_count]
 
     try:
         write_summary(out_path, records)
