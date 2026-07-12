@@ -126,6 +126,9 @@ def build_parser():
                         help="output summary CSV path (default: summary.csv)")
     parser.add_argument("-o", "--output", dest="output_flag", default=None,
                         help="output summary CSV path (overrides positional)")
+    parser.add_argument("--min-count", dest="min_count", type=int, default=None,
+                        metavar="N",
+                        help="only output groups whose count is >= N")
     return parser
 
 
@@ -143,6 +146,9 @@ def main(argv=None):
         return 1
 
     records = summarise(rows)
+    # Opt-in filter: keep only groups at/above the threshold (spec Q9).
+    if args.min_count is not None:
+        records = [r for r in records if r["count"] >= args.min_count]
 
     try:
         write_summary(out_path, records)

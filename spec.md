@@ -46,10 +46,11 @@ Input with only a header (or zero data rows) produces a `summary.csv` containing
 Invocation: `summarise <input.csv> [--output <path>]`
 - positional `input` — path to `events.csv` (required)
 - `--output` / `-o` — output path (default: `summary.csv` in the current directory)
+- `--min-count N` — only output groups whose `count >= N` (default: unset — all groups; see Q9)
 - `--help` / `-h` — usage
 Exit codes:
 - `0` — success (including empty input)
-- `2` — usage error (missing/unknown args) — argparse default
+- `2` — usage error (missing/unknown args, or a non-integer `--min-count`) — argparse default
 - `1` — I/O error (input not found/unreadable, output not writable) or malformed CSV structure (e.g. missing required columns)
 
 **Q8 — Explicit out-of-scope items (v1).**
@@ -60,6 +61,18 @@ Exit codes:
 - Output formats other than CSV (no JSON, no console tables).
 - Filtering by level/service/time range.
 - Config files or environment-variable configuration.
+
+**Q9 — `--min-count N` behaviour (v1.1).**
+An opt-in output filter, applied *after* grouping/sorting:
+- When set, only groups whose `count >= N` are written; grouping,
+  normalisation, and ordering are otherwise unchanged.
+- When **unset** (the default), every group is written — output is
+  identical to v1.
+- If no group qualifies, the output is header-only and the tool exits `0`
+  (same shape as empty input, Q6).
+- `N` is parsed as an integer; a non-integer value is a usage error
+  (exit `2`, Q7). Values `< 1` are accepted and act as a no-op (every
+  group has `count >= 1`); no special validation is performed.
 
 ## 5. Non-functional constraints
 - Python standard library only (`csv`, `argparse`, `datetime`). No third-party deps.
@@ -72,3 +85,8 @@ Tatiana Smetanina — 2026-07-12
 ## Implementation notes
 - **Decision — timestamps compared in UTC, but echoed verbatim.** `first_seen`/`last_seen` are chosen by parsing each timestamp to a timezone-aware UTC `datetime` for correct min/max comparison across offsets, yet the *original* input string is written back to the output (e.g. `2026-07-12T09:31:00Z` stays as `Z`, not rewritten to `+00:00`). This keeps output faithful to the source while comparisons stay correct. Naive timestamps are assumed UTC.
 - **Extension beyond Q7 — output may also be a second positional argument** (`logsum <input> <output>`), in addition to the spec's `--output/-o` flag, to support `python -m src.logsum data/sample_events.csv data/summary.csv`. The `-o` flag wins if both are supplied.
+
+## Addenda (post sign-off)
+- **v1.1 (2026-07-12) — added `--min-count N`** (Q9): an opt-in output
+  filter keeping only groups with `count >= N`. Default behaviour (flag
+  absent) is unchanged. Original sign-off above remains in force.
